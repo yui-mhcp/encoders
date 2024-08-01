@@ -19,11 +19,13 @@ Check the [CHANGELOG](https://github.com/yui-mhcp/yui-mhcp/blob/main/CHANGELOG.m
 ├── models
 │   ├── encoder
 │   │   ├── audio_encoder.py    : audio encoder class (audio to audio comparison with GE2E loss)
-│   │   └── base_encoder.py     : abstract Encoder class (trained with the GE2E loss)
+│   │   ├── base_encoder.py     : abstract Encoder class (trained with the GE2E loss)
+│   │   └── text_encoder.py     : text encoder that uses pretrained embedding models
 ├── pretrained_models
 ├── unitests
 ├── utils
-└── speaker_verification.ipynb
+├── speaker_verification.ipynb
+└── information_retrieval.ipynb
 ```
 
 Check [the main project](https://github.com/yui-mhcp/base_dl_project) for more information about the unextended modules / structure / main classes. 
@@ -59,6 +61,9 @@ Models must be unzipped in the `pretrained_models/` directory !
     - [ ] Implement the `BaseComparator` class
     - [ ] Implement the `SiameseGenerator` class
     - [ ] Update the README to provide more information about evaluation of encoders
+- [x] Implement text embedding models
+- [x] Implement a vectors database for information retrieval
+- [ ] Implement a colbert-vectors database for fine-grained search
 
 ## Contacts and licence
 
@@ -95,7 +100,9 @@ If you find this project useful in your work, please add this citation to give i
 Tutorials : 
 - [Medium tutorial for speaker verification with siamese networks](https://medium.com/analytics-vidhya/building-a-speaker-identification-system-from-scratch-with-deep-learning-f4c4aa558a56). 
 - [Google GE2E Loss tutorial](https://google.github.io/speaker-id/publications/GE2E/) : amazing Google tutorial explaining the benefits of the GE2E loss compared to the Siamese approach (which is really similar to their `Tuple End-to-End (TE2E) loss` principle)
+- [LLama-index tutorial](https://docs.llamaindex.ai/en/stable/module_guides/indexing/vector_store_index/) on information retrieval with dense vectors
 
 Github project : 
 - [voicemap project](https://github.com/oscarknagg/voicemap) : nice project for speaker verification.
 - [OpenAI's CLIP](https://github.com/openai/clip) : the official `CLIP` implementation in pytorch. 
+- [LLama-index](https://github.com/run-llama/llama_index) : well known library for information retrieval
