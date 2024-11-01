@@ -135,13 +135,19 @@ class GE2ELoss(keras.losses.Loss):
         )
         embeddings  = embeddings[:, :, None, :]
         if distance_metric == 'euclidian':
-            return - K.sqrt(K.sum(K.square(embeddings - centroids), axis = -1))
-        elif distance_metric == 'manhattan':
-            return - K.sum(K.abs(embeddings - centroids), axis = -1)
+            xx = einsum_matmul(embeddings, embeddings)
+            yy = einsum_matmul(centroids, centroids)
+            xy = einsum_matmul(embeddings, centroids)
+            return - K.sqrt(xx - 2 * xy + yy)
         elif distance_metric == 'cosine':
-            return K.sum(K.multiply(
+            return einsum_matmul(
                 K.divide_no_nan(embeddings, K.norm(embeddings, axis = -1, keepdims = True)),
                 K.divide_no_nan(centroids, K.norm(centroids, axis = -1, keepdims = True))
-            ), axis = -1)
+            )
         elif distance_metric == 'dp':
-            return K.sum(label_embeddings * centroids, axis = -1)
+            return einsum_matmul(label_embeddings, centroids)
+        elif distance_metric == 'manhattan':
+            return - K.sum(K.abs(embeddings - centroids), axis = -1)
+
+def einsum_matmul(x, y):
+    return K.einsum('...i, ...i -> ...', x, y)
