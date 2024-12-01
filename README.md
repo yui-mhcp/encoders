@@ -42,10 +42,7 @@ Models must be unzipped in the `pretrained_models/` directory !
 
 ## Installation and usage
 
-1. Clone this repository : `git clone https://github.com/yui-mhcp/encoders.git`
-2. Go to the root of this repository : `cd encoders`
-3. Install requirements : `pip install -r requirements.txt`
-4. Open an example notebook and follow the instructions !
+Check [this installagion guide](https://github.com/yui-mhcp/yui-mhcp/blob/main/INSTALLATION.md) for the step-by-step instructions !
 
 ## TO-DO list :
 
