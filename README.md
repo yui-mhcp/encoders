@@ -1,36 +1,38 @@
-# :yum: Encoder networks
+# :yum: Embedding models
 
 Check the [CHANGELOG](https://github.com/yui-mhcp/yui-mhcp/blob/main/CHANGELOG.md) file to have a global overview of the latest modifications ! :yum:
 
 ## Project structure
 
 ```bash
-├── custom_architectures
-├── custom_layers
-├── custom_train_objects
-│   ├── generators
-│   │   ├── file_cache_generator.py  : abstract generator caching processed data
-│   │   └── ge2e_generator.py        : generator dedicated to format GE2E input
-│   ├── losses
-│   │   └── ge2e_loss.py    : Keras 3 implementation of the GE2E loss
-│   ├── metrics
-│   │   └── ge2e_metric.py  : custom metric associated to the GE2E loss
-├── loggers
-├── models
+├── architectures            : utilities for model architectures
+│   ├── layers               : custom layer implementations
+│   ├── transformers         : transformer architecture implementations
+│   ├── common_blocks.py     : defines common blocks (e.g., Conv + BN + ReLU)
+│   ├── generation_utils.py  : utilities for text and sequence generation
+│   ├── hparams.py           : hyperparameter management
+│   └── simple_models.py     : defines classical models such as CNN / RNN / MLP and siamese
+├── custom_train_objects     : custom objects used in training / testing
+├── loggers                  : logging utilities for tracking experiment progress
+├── models                   : main directory for model classes
+│   ├── interfaces           : directories for interface classes
 │   ├── encoder
 │   │   ├── audio_encoder.py    : audio encoder class (audio to audio comparison with GE2E loss)
 │   │   ├── base_encoder.py     : abstract Encoder class (trained with the GE2E loss)
 │   │   └── text_encoder.py     : text encoder that uses pretrained embedding models
-├── pretrained_models
-├── unitests
-├── utils
-├── speaker_verification.ipynb
-└── information_retrieval.ipynb
+│   └── weights_converter.py : utilities to convert weights between different models
+├── tests                    : unit and integration tests for model validation
+├── utils                    : utility functions for data processing and visualization
+├── information_retrieval.ipynb : notebook illustrating information retrieval with `TextEncoder`
+├── LICENCE                  : project license file
+├── README.md                : this file
+├── requirements.txt         : required packages
+└── speaker_verification.ipynb  : notebook illustrating speaker verification with `AudioEncoder` (will be updated in a future update)
 ```
 
 Check [the main project](https://github.com/yui-mhcp/base_dl_project) for more information about the unextended modules / structure / main classes. 
 
-**Important Note** : this project is the keras 3 extension of the [siamese network](https://github.com/yui-mhcp/siamese_networks) project. All features are not available yet. Once the convertion will be completely finished, the siamese networks project will be removed in favor of this one. 
+**Important Note** : this project is the keras 3 extension of the [siamese network](https://github.com/yui-mhcp/siamese_networks) project. All features are not available yet. Once the convertion will be completely finalized, the siamese networks project will be removed in favor of this one. 
 
 ## Available models
 
@@ -38,7 +40,7 @@ Check [the main project](https://github.com/yui-mhcp/base_dl_project) for more i
 | :-----------: | :-------: | :-----------: | :-----------: | :-------: | :-------: |
 | mel-spectrogram   | [VoxForge](http://www.voxforge.org/), [CommonVoice](https://commonvoice.mozilla.org/fr/datasets) | `AudioEncoder (CNN 1D + LSTM)`   | 256   | [me](https://github.com/yui-mhcp) | [Google Drive](https://drive.google.com/file/d/1bzj9412l0Zje3zLaaqGOBNaQRBYLVO2q/view?usp=share_link)  |
 
-Models must be unzipped in the `pretrained_models/` directory !
+Models should be unzipped in the `pretrained_models/` directory !
 
 ## Installation and usage
 
@@ -49,9 +51,6 @@ Check [this installagion guide](https://github.com/yui-mhcp/yui-mhcp/blob/main/I
 - [x] Make the TO-DO list
 - [x] Comment the code
 - [x] Optimize `KNN` in pure `keras 3`
-- [x] Implement the `clustering` procedure
-- [ ] Implement the `similarity matrix` evaluation procedure
-- [ ] Implement the `clustering` evaluation procedure
 - [ ] Convert the `siamese_networks` project :
     - [x] Implement the `BaseEncoder` class
     - [ ] Implement the `BaseSiamese` class
@@ -59,28 +58,24 @@ Check [this installagion guide](https://github.com/yui-mhcp/yui-mhcp/blob/main/I
     - [ ] Implement the `SiameseGenerator` class
     - [ ] Update the README to provide more information about evaluation of encoders
 - [x] Implement text embedding models
-- [x] Implement a vectors database for information retrieval
-- [ ] Implement a colbert-vectors database for fine-grained search
+- [x] Implement a `VectorDatabase` for information retrieval
+- [x] Implement a `faiss`-based `VectorIndex` for information retrieval
 
 ## Contacts and licence
 
-Contacts :
-- **Mail** : `yui-mhcp@tutanota.com`
-- **[Discord](https://discord.com)** : yui0732
+Contacts:
+- **Mail**: `yui-mhcp@tutanota.com`
+- **[Discord](https://discord.com)**: yui0732
 
-### Terms of use
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See the [LICENSE](LICENSE) file for details.
 
-The goal of these projects is to support and advance education and research in Deep Learning technology. To facilitate this, all associated code is made available under the [GNU Affero General Public License (AGPL) v3](AGPLv3.licence), supplemented by a clause that prohibits commercial use (cf the [LICENCE](LICENCE) file).
+This license allows you to use, modify, and distribute the code, as long as you include the original copyright and license notice in any copy of the software/source. Additionally, if you modify the code and distribute it, or run it on a server as a service, you must make your modified version available under the same license.
 
-These projects are released as "free software", allowing you to freely use, modify, deploy, and share the software, provided you adhere to the terms of the license. While the software is freely available, it is not public domain and retains copyright protection. The license conditions are designed to ensure that every user can utilize and modify any version of the code for their own educational and research projects.
+For more information about the AGPL-3.0 license, please visit [the official website](https://www.gnu.org/licenses/agpl-3.0.html)
 
-If you wish to use this project in a proprietary commercial endeavor, you must obtain a separate license. For further details on this process, please contact me directly.
+## Citation
 
-For my protection, it is important to note that all projects are available on an "As Is" basis, without any warranties or conditions of any kind, either explicit or implied. However, do not hesitate to report issues on the repository's project, or make a Pull Request to solve it :smile: 
-
-### Citation
-
-If you find this project useful in your work, please add this citation to give it more visibility ! :yum:
+If you find this project useful in your work, please add this citation to give it more visibility! :yum:
 
 ```
 @misc{yui-mhcp
@@ -91,15 +86,3 @@ If you find this project useful in your work, please add this citation to give i
     howpublished    = {\url{https://github.com/yui-mhcp}}
 }
 ```
-
-## Notes and references 
-
-Tutorials : 
-- [Medium tutorial for speaker verification with siamese networks](https://medium.com/analytics-vidhya/building-a-speaker-identification-system-from-scratch-with-deep-learning-f4c4aa558a56). 
-- [Google GE2E Loss tutorial](https://google.github.io/speaker-id/publications/GE2E/) : amazing Google tutorial explaining the benefits of the GE2E loss compared to the Siamese approach (which is really similar to their `Tuple End-to-End (TE2E) loss` principle)
-- [LLama-index tutorial](https://docs.llamaindex.ai/en/stable/module_guides/indexing/vector_store_index/) on information retrieval with dense vectors
-
-Github project : 
-- [voicemap project](https://github.com/oscarknagg/voicemap) : nice project for speaker verification.
-- [OpenAI's CLIP](https://github.com/openai/clip) : the official `CLIP` implementation in pytorch. 
-- [LLama-index](https://github.com/run-llama/llama_index) : well known library for information retrieval

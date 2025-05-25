@@ -1,5 +1,5 @@
-# Copyright (C) 2022-now yui-mhcp project author. All rights reserved.
-# Licenced under a modified Affero GPL v3 Licence (the "Licence").
+# Copyright (C) 2025-now yui-mhcp project author. All rights reserved.
+# Licenced under the Affero GPL v3 Licence (the "Licence").
 # you may not use this file except in compliance with the License.
 # See the "LICENCE" file at the root of the directory for the licence information.
 #
@@ -9,28 +9,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base_encoder import BaseEncoderModel
-from utils.keras_utils import TensorSpec, ops
-from models.interfaces.base_audio_model import BaseAudioModel
+from .base_encoder import BaseEncoder
+from utils.keras import TensorSpec, ops
+from ..interfaces.base_audio_model import BaseAudioModel
 
 MIN_AUDIO_TIME      = 0.1 # below 0.1sec the encoding is not really relevant
 
 DEFAULT_AUDIO_RATE      = 16000
 DEFAULT_MAX_AUDIO_TIME  = 3
 
-class AudioEncoder(BaseAudioModel, BaseEncoderModel):
+class AudioEncoder(BaseAudioModel, BaseEncoder):
+    _default_loss   = 'GE2ELoss'
+    _default_metrics    = ['GE2EMetric']
+
     prepare_input   = BaseAudioModel.get_audio
-    augment_input   = BaseAudioModel.augment_audio
+    #augment_input   = BaseAudioModel.augment_audio
     
     def __init__(self,
-                 audio_rate     = DEFAULT_AUDIO_RATE,
+                 rate   = DEFAULT_AUDIO_RATE,
                  
                  max_audio_time     = DEFAULT_MAX_AUDIO_TIME,
                  use_fixed_length_input = False,
                  
                  ** kwargs
                 ):
-        self._init_audio(audio_rate = audio_rate, ** kwargs)
+        self._init_audio(rate = rate, ** kwargs)
         
         self.max_audio_time     = max_audio_time
         self.use_fixed_length_input = use_fixed_length_input

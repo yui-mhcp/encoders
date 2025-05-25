@@ -1,5 +1,5 @@
-# Copyright (C) 2022-now yui-mhcp project author. All rights reserved.
-# Licenced under a modified Affero GPL v3 Licence (the "Licence").
+# Copyright (C) 2025-now yui-mhcp project author. All rights reserved.
+# Licenced under the Affero GPL v3 Licence (the "Licence").
 # you may not use this file except in compliance with the License.
 # See the "LICENCE" file at the root of the directory for the licence information.
 #
@@ -14,8 +14,8 @@ import numpy as np
 from .audio_stream import AudioStream
 
 class AudioRecorder(AudioStream):
-    def __init__(self, callback, max_time = 10., ** kwargs):
-        super().__init__(** kwargs)
+    def __init__(self, callback, format, rate = None, channels = None, max_time = 10., ** kwargs):
+        super().__init__(rate, format = format, channels = channels, ** kwargs)
         self.callback   = callback
         self.max_time   = max_time
         
@@ -32,12 +32,13 @@ class AudioRecorder(AudioStream):
     def stream_callback(self, data, frame_count, time_info, flags):
         import pyaudio
         
-        chunk = np.frombuffer(data, self.format)
-        if self.callback is not None: self.callback(chunk)
+        chunk = np.frombuffer(data, self.format).reshape((-1, self.channels)).T
         self.audio_chunks.append(chunk)
+        if self.callback is not None: self.callback(chunk)
         
         if self.max_time and len(self.audio_chunks) / self.fps >= self.max_time:
             status = pyaudio.paComplete
+            self._finished.set()
         else:
             status = pyaudio.paContinue
 

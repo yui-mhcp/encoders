@@ -1,5 +1,5 @@
-# Copyright (C) 2022-now yui-mhcp project author. All rights reserved.
-# Licenced under a modified Affero GPL v3 Licence (the "Licence").
+# Copyright (C) 2025-now yui-mhcp project author. All rights reserved.
+# Licenced under the Affero GPL v3 Licence (the "Licence").
 # you may not use this file except in compliance with the License.
 # See the "LICENCE" file at the root of the directory for the licence information.
 #
@@ -13,21 +13,22 @@ import os
 import re
 import unicodedata
 
+from functools import partial
 from unidecode import unidecode
 
 from .numbers import normalize_numbers
-from utils.wrapper_utils import partial
-
 
 _special_symbols    = {
     '='     : {'fr' : 'égal',       'en' : 'equal'},
     '+'     : {'fr' : 'plus',       'en' : 'plus'},
     '/'     : {'fr' : 'slash',      'en' : 'slash'},
-    '*'     : {'fr' : 'étoile',     'en' : 'star'},
+    #'*'     : {'fr' : 'étoile',     'en' : 'star'},
     '^'     : {'fr' : 'chapeau',    'en' : 'hat'},
     '%'     : {'fr' : 'pourcent',   'en' : 'percent'},
     '§'     : {'fr' : 'paragraphe', 'en' : 'paragraph'},
-    '&'     : {'fr' : 'et',         'en' : 'and'}
+    '&'     : {'fr' : 'et',         'en' : 'and'},
+    '°C'    : {'fr' : 'degrés',     'en' : 'degrees'},
+    '°'     : {'fr' : 'degrés',     'en' : 'degrees'}
 }
 
 # Regular expression matching whitespace:
@@ -42,6 +43,11 @@ _accents    = "âéèêîç"
 
 # List of (regular expression, replacement) pairs for abbreviations:
 _abreviations   = {}
+
+_tremas_patterns = {
+    '(aï)\b'   : 'aille',
+    '(ï)' : 'hi'
+}
 
 _letter_pronounciation  = {
     'a' : {'fr' : 'ha', 'en' : 'ae'},
@@ -109,7 +115,6 @@ def clean_text(text, cleaners, tokens = {}, ** kwargs):
     """ Cleans `text` with the list of `cleaners` (see `get_cleaners_fn`) """
     if not cleaners: return text
     
-    text = text
     for cleaner in cleaners:
         text = cleaner(text, ** kwargs)
     
@@ -171,7 +176,7 @@ def replace_words(text,
 def expand_abreviations(text, abreviations = None, lang = None, ** kwargs):
     assert abreviations is not None or lang is not None
     
-    if abreviations is None: abreviations = get_abreviations(lang)
+    if abreviations is None: abreviations = get_abreviations(lang if lang != 'be' else 'fr')
     
     return replace_words(
         text,
@@ -183,17 +188,25 @@ def expand_abreviations(text, abreviations = None, lang = None, ** kwargs):
 def expand_special_symbols(text, lang = None, symbols = None, ** kwargs):
     assert lang is not None or symbols is not None
     
-    if symbols is None: symbols = {k : v[lang] for k, v in _special_symbols.items() if lang in v}
+    if symbols is None:
+        if lang == 'be': lang = 'fr'
+        symbols = {k : v[lang] for k, v in _special_symbols.items() if lang in v}
     
     for symbol, repl in symbols.items():
         text = text.replace(symbol, ' ' + repl + ' ')
     
     return text
 
+def expand_tremas(text, ** kwargs):
+    return replace_patterns(text, _tremas_patterns, ** kwargs)
+
 def remove_tokens(text, tokens = [], ** kwargs):
     """ Replace all tokens in `tokens` (an iterable) by ' ' (space) """
     if not tokens: return text
     return replace_words(text, {tok : '' for tok in tokens})
+
+def remove_markdown(text):
+    return re.sub(r'\*\*(.*)\*\*', r'\1', text)
 
 def _expand_acronym(text, lang, extensions = _letter_pronounciation, ** kwargs):
     if len(text) > 4 or (text == 'I' and lang == 'en'): return text
@@ -201,6 +214,7 @@ def _expand_acronym(text, lang, extensions = _letter_pronounciation, ** kwargs):
 
 def expand_acronym(text, lang, ** kwargs):
     """ Expand all words composed of uppercases """
+    if lang == 'be': lang = 'fr'
     return re.sub(_acronym_re, lambda m: _expand_acronym(m.group(0), lang), text)
 
 def detach_punctuation(text, punctuation = _punctuation, ** kwargs):
@@ -237,6 +251,15 @@ def remove_accents(text, ** kwargs):
     text = unicodedata.normalize("NFD", text)
     return ''.join([c for c in text if unicodedata.category(c) != "Mn"])
 
+def collapse_repetitions(text, max_repetition):
+    if not text: return text
+    
+    keep, count = [text[0]], 1
+    for c in text[1:]:
+        count = 1 if c != keep[-1] else count + 1
+        if count <= max_repetition: keep.append(c)
+    return ''.join(keep)
+    
 def convert_to_ascii(text, ** kwargs):
     return unidecode(text)
 
@@ -272,13 +295,19 @@ def transliteration_cleaners(text, ** kwargs):
 
 def complete_cleaners(text,
                       lang,
+                      *,
+                      
                       to_lowercase  = True,
                       to_expand     = True,
                       to_expand_abrev   = True,
                       to_expand_symbols = True,
                       to_expand_acronyms    = False,
+                      
                       replacements  = None,
                       patterns  = None,
+                      
+                      max_repetition    = -1,
+                      
                       ** kwargs
                      ):
     """
@@ -291,19 +320,26 @@ def complete_cleaners(text,
         5) Expand numbers + special symbols
         6) Collapse whitespace
     """
-    if lang == 'fr':        text = fr_convert_to_ascii(text, ** kwargs)
-    else:                   text = convert_to_ascii(text, ** kwargs)
+    if patterns:        text = replace_patterns(text, patterns, ** kwargs)
+    if replacements:    text = replace_words(text, replacements, ** kwargs)
+    if to_lowercase:    text = lowercase(text, ** kwargs)
     
-    if patterns:            text = replace_patterns(text, patterns, ** kwargs)
-    if replacements:        text = replace_words(text, replacements, ** kwargs)
-    if to_lowercase:        text = lowercase(text, ** kwargs)
     if to_expand:
+        text = remove_markdown(text)
         if to_expand_abrev:     text = expand_abreviations(text, lang = lang, ** kwargs)
         text = expand_numbers(text, lang = lang, expand_symbols = to_expand_symbols, ** kwargs)
         if to_expand_symbols:   text = expand_special_symbols(text, lang = lang, ** kwargs)
     
+    if lang in ('fr', 'be'):
+        text = expand_tremas(text)
+        text = fr_convert_to_ascii(text, ** kwargs)
+    else:
+        lang = convert_to_ascii(text, ** kwargs)
+    
+    if max_repetition > 1:  text = collapse_repetitions(text, max_repetition)
     text = collapse_whitespace(text, ** kwargs)
     return text
 
 english_cleaners = partial(complete_cleaners, lang = 'en')
+belgian_cleaners = partial(complete_cleaners, lang = 'be')
 french_cleaners  = partial(complete_cleaners, lang = 'fr')
