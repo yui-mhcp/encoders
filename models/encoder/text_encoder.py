@@ -15,7 +15,7 @@ import numpy as np
 
 from loggers import timer
 from utils import is_path, expand_path
-from utils.text import parse_document, chunks_from_paragraphs
+from utils.text import parse_document, chunks_from_paragraphs, format_text
 from utils.databases import init_database
 from utils.keras import TensorSpec, ops
 from .base_encoder import BaseEncoder
@@ -53,34 +53,30 @@ class TextEncoder(BaseTextModel, BaseEncoder):
     def predict(self,
                 texts   = None,
                 *,
-
+                
                 documents   = None,
                 
-                group_by    = 'filename',
+                format  = None,
+                
+                group_by    = 'section',
                 chunk_size  = 256,
                 chunk_overlap   = 0.2,
-
+                
                 save    = True,
-                path    = None,
+                path    = 'database.db',
                 directory   = None,
                 overwrite   = False,
                 database    = None,
-                primary_key = None,
                 
                 ** kwargs
                ):
         assert texts is not None or documents
-        
-        if primary_key is None:
-            primary_key = ('filename', 'text') if documents else 'text'
         
         if texts is None:                   texts = []
         elif hasattr(texts, 'to_dict'):     texts = texts.to_dict('records')
         elif not isinstance(texts, list):   texts = [texts]
         
         if database is None:
-            if path is None: path = 'documents.db' if documents else 'database.db'
-            
             if save:
                 if directory is None: directory = self.pred_dir
                 path = os.path.join(directory, path)
@@ -88,59 +84,89 @@ class TextEncoder(BaseTextModel, BaseEncoder):
             database = init_database(
                 'VectorDatabase',
                 path = path,
-                primary_key = primary_key,
+                primary_key = ('source', 'formatted'),
                 vector_key  = 'embedding',
                 embedding_dim   = self.embedding_dim,
                 ** kwargs
             )
 
-        if not overwrite:
-            inputs = [inp for inp in texts if inp not in database]
-        else:
-            inputs = texts.copy()
-
+        inputs = texts.copy()
         for i in range(len(inputs)):
-            if isinstance(inputs[i], str): inputs[i] = {'text' : inputs[i]}
+            if isinstance(inputs[i], str):
+                inputs[i] = {'text' : inputs[i], 'source' : 'raw'}
+            elif 'source' not in inputs[i]:
+                if 'filename' in inputs[i]: inputs[i]['source'] = inputs[i]['filename']
+                elif 'url' in inputs[i]:    inputs[i]['source'] = inputs[i]['url']
+                else:                       inputs[i]['source'] = 'raw'
+
+        if inputs:
+            if chunk_size:
+                inputs = chunks_from_paragraphs(
+                    inputs,
+                    chunk_size,
+                    group_by    = group_by,
+                    max_overlap_len = chunk_overlap,
+
+                    tokenizer   = self.tokenizer,
+                    ** kwargs
+                )
+
+            if format:
+                for inp in inputs:
+                    inp['formatted'] = format_text(format, ** inp)
+            else:
+                for inp in inputs: inp['formatted'] = inp['text']
+
+            if not overwrite:
+                inputs = [inp for inp in inputs if inp not in database]
         
         if documents:
             documents = expand_path(documents)
             if not isinstance(documents, (list, tuple)): documents = [documents]
             
-            _db_files   = database.get_column('filename')
+            if format:
+                _format_chunk = lambda _format, ** kwargs: format_text(_format, ** kwargs)
+            else:
+                _format_chunk = lambda _format, text = None, ** _: text
+            
+            _db_files   = set(database.get_column('filename'))
             for doc in documents:
-                if isinstance(doc, str):
-                    if not overwrite and doc in _db_files:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug('The document {} is already in the database'.format(doc))
-                        continue
-                    
-                    chunks = parse_document(doc, ** kwargs)
-                    if chunk_size:
-                        chunks = chunks_from_paragraphs(
-                            chunks,
-                            chunk_size,
-                            group_by    = group_by,
-                            max_overlap_len = chunk_overlap,
-
-                            tokenizer   = self.tokenizer,
-                            ** kwargs
-                        )
-
-                    inputs.extend(chunks)
-                elif isinstance(doc, dict):
-                    inputs.append(doc)
-                elif isinstance(doc, list):
-                    inputs.extend(doc)
-                else:
+                if not isinstance(doc, str):
                     raise ValueError('Unsupported document format : {}'.format(doc))
+
+                if not overwrite and doc in _db_files:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug('The document {} is already in the database'.format(doc))
+                    continue
+
+                chunks = parse_document(doc, ** kwargs)
+                if chunk_size:
+                    chunks = chunks_from_paragraphs(
+                        chunks,
+                        chunk_size,
+                        group_by    = group_by,
+                        max_overlap_len = chunk_overlap,
+
+                        tokenizer   = self.tokenizer,
+                        ** kwargs
+                    )
+
+                for i in reversed(range(len(chunks))):
+                    if not chunks[i].get('text', None):
+                        del chunks[i]
+                    else:
+                        chunks[i].update({
+                            'source' : doc, 'formatted' : _format_chunk(format, ** chunks[i])
+                        })
+                inputs.extend(chunks)
         
         if inputs:
             sorted_indices  = sorted(
-                range(len(inputs)), key = lambda idx: len(inputs[idx]['text'])
+                range(len(inputs)), key = lambda idx: len(inputs[idx]['formatted'])
             )
             sorted_inputs = [inputs[idx] for idx in sorted_indices]
             
-            embeddings = self.embed(sorted_inputs, ** kwargs)
+            embeddings = self.embed([inp['formatted'] for inp in inputs], ** kwargs)
             embeddings = embeddings[np.argsort(sorted_indices)]
             
             database.extend(inputs, vectors = embeddings)
@@ -227,3 +253,4 @@ class TextEncoder(BaseTextModel, BaseEncoder):
     
     def get_config(self):
         return {** super().get_config(), ** self.get_config_text()}
+    
