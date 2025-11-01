@@ -139,7 +139,7 @@ class BaseEncoder(BaseModel):
         return prepare_dataset(dataset, ** config)
     
     @timer
-    def embed(self, data, batch_size = 8, tqdm = lambda x: x, ** kwargs):
+    def embed(self, data, batch_size = 8, *, to_numpy = True, tqdm = lambda x: x, ** kwargs):
         """
             Embed a (list of) data
             
@@ -164,9 +164,20 @@ class BaseEncoder(BaseModel):
             if hasattr(out, 'output'): out = out.output
             if isinstance(out, dict):  out = out['dense']
             
-            embeddings.append(ops.convert_to_numpy(out))
+            if to_numpy: out = ops.convert_to_numpy(out)
+            embeddings.append(out)
         
-        return np.concatenate(embeddings, axis = 0)
+        if len(embeddings) == 1:
+            return embeddings[0]
+        elif to_numpy:
+            return np.concatenate(embeddings, axis = 0)
+        elif self.runtime == 'keras':
+            return ops.concatenate(embeddings, axis = 0)
+        elif self.runtime in ('hf', 'trt', 'trt_llm'):
+            import torch
+            return torch.concat(embeddings, dim = 0)
+        else:
+            raise RuntimeError('Unspecified behavior for runtime {}'.format(self.runtime))
     
     def get_config(self):
         config = super().get_config()
