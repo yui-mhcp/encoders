@@ -9,11 +9,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
+
 from loggers import set_level
 
 from .comparison_utils import is_diff, is_equal
 from .distances import *
-from .embeddings import *
 from .file_utils import *
 from .generic_utils import *
 from .plot_utils import *
@@ -21,9 +22,11 @@ from .sequence_utils import *
 from .wrappers import *
 
 from .keras import *
-from .databases import *
 from .callbacks import *
+from .embeddings import *
 from .threading import *
+
+warnings.filterwarnings('ignore', module = 'modelopt')
 
 def setup_environment(log_level = None, ** kwargs):
     if log_level: set_level(log_level)

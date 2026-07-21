@@ -10,13 +10,11 @@
 # limitations under the License.
 
 import re
+import scipy
 import logging
 import itertools
 import subprocess
 import numpy as np
-import librosa.util as librosa_util
-
-from scipy.signal import get_window, resample
 
 from loggers import timer
 from ..wrappers import dispatch_wrapper
@@ -30,7 +28,7 @@ _ffmpeg_silence_re  = re.compile(r' silence_(start|end): ([0-9]+(?:\.[0-9]*)?)\b
 def resample_audio(audio, rate, target_rate):
     if rate == target_rate: return audio, rate
     
-    audio   = resample(audio, int(len(audio) / rate * target_rate))
+    audio   = scipy.signal.resample(audio, int(len(audio) / rate * target_rate))
     return audio, target_rate
 
 @timer
@@ -392,4 +390,3 @@ def trim_silence_simple(audio, *, threshold = 0.1, mode = 'start_end', ** kwargs
         if 'start' in mode: audio = audio[indexes[0] : ]
             
     return audio
-

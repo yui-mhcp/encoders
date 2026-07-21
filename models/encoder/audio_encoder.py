@@ -11,19 +11,19 @@
 
 from .base_encoder import BaseEncoder
 from utils.keras import TensorSpec, ops
-from ..interfaces.base_audio_model import BaseAudioModel
+from ..core import AudioModelMixin
 
 MIN_AUDIO_TIME      = 0.1 # below 0.1sec the encoding is not really relevant
 
 DEFAULT_AUDIO_RATE      = 16000
 DEFAULT_MAX_AUDIO_TIME  = 3
 
-class AudioEncoder(BaseAudioModel, BaseEncoder):
+class AudioEncoder(AudioModelMixin, BaseEncoder):
     _default_loss   = 'GE2ELoss'
     _default_metrics    = ['GE2EMetric']
 
-    prepare_input   = BaseAudioModel.get_audio
-    #augment_input   = BaseAudioModel.augment_audio
+    prepare_input   = AudioModelMixin.get_audio
+    #augment_input   = AudioModelMixin.augment_audio
     
     def __init__(self,
                  rate   = DEFAULT_AUDIO_RATE,
@@ -155,10 +155,6 @@ class AudioEncoder(BaseAudioModel, BaseEncoder):
         else:
             return int(self.max_audio_time * self.audio_rate)
                 
-    @property
-    def training_hparams(self):
-        return super().training_hparams(** self.training_hparams_audio)
-        
     def __str__(self):
         return super().__str__() + self._str_audio()
     

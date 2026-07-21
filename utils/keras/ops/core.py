@@ -33,7 +33,7 @@ class TensorflowNotAvailable(Exception):
 
 _creation_functions = {
     'empty', 'zeros', 'ones', 'full', 'zeros_like', 'ones_like', 'full_like',
-    'arange', 'linspace', 'tri', 'trii', 'triu'
+    'arange', 'linspace', 'tri', 'tril', 'triu'
 }
 array   = constant  = Ops('array', disable_np = True)
 eye     = Ops('eye', tensorflow_fn = 'eye', disable_np = True)
@@ -73,10 +73,16 @@ ensure_shape    = Ops(
 
 @timer(debug = True)
 def is_array(x):
+    """
+        Return whether `x` is a `np.ndarray` or a `keras` tensor
+        **Important Note**: the function returns `False` if `x` is a `Tensor` from another backend
+        For example, if the backend is `tensorflow` but `x` is a `torch.Tensor`, it will return `False`
+    """
     return (hasattr(x, 'shape')) and (isinstance(x, np.ndarray) or is_tensor(x))
 
 @timer(debug = True)
 def is_tensor(x):
+    """ Return `True` if `x` is a `keras` Tensor (equivalent to `keras.ops.is_tensor`) """
     if fast_is_not_tensor(x):   return False
     elif 'keras' not in sys.modules:    return False
     elif is_tensorflow_backend() or not is_tensorflow_graph():
@@ -85,29 +91,42 @@ def is_tensor(x):
         return sys.modules['tensorflow'].is_tensor(x)
 
 @timer(debug = True)
+def is_tf_tensor(x):
+    """ Equivalent to `tf.is_tensor` """
+    tf = sys.modules.get('tensorflow', None)
+    return False if tf is None else tf.is_tensor(x)
+
+@timer(debug = True)
 def is_torch_tensor(x):
-    if 'torch' not in sys.modules: return False
-    import torch
-    return torch.is_tensor(x)
+    """ Equivalent to `torch.is_tensor` """
+    torch = sys.modules.get('torch', None)
+    return False if torch is None else torch.is_tensor(x)
 
 
 @timer(debug = True)
 def convert_to_numpy(x, dtype = None, copy = False):
-    if dtype == 'float' and hasattr(x, 'dtype') and is_float(x):
-        dtype = None
-    elif dtype:
-        dtype = dtype_to_str(dtype)
+    """ Convert `x` to a `np.ndarray` """
+    if dtype is not None:
+        dtype = _get_cast_dtype(x, dtype)
     
-    if not fast_is_not_tensor(x) and is_tensorflow_graph():
+    if is_tensorflow_graph():
         return convert_to_tf_tensor(x, dtype)
+    elif not hasattr(x, 'dtype'):
+        return np.asarray(x, dtype = dtype)
+    elif isinstance(x, np.ndarray):
+        if dtype:   return x.astype(dtype)
+        elif copy:  return x.copy()
+        else:       return x
     elif hasattr(x, 'detach'):
-        array = np.asarray(x.detach().cpu().numpy(), dtype = dtype)
+        if x.dtype == sys.modules['torch'].bfloat16:
+            x = x.to(dtype = sys.modules['torch'].float32)
+        return np.asarray(x.detach().cpu().numpy(), dtype = dtype)
     elif hasattr(x, 'numpy'):
-        array = np.asarray(x.numpy(), dtype = dtype)
+        if dtype_to_str(x.dtype) == 'bfloat16':
+            x = sys.modules['keras'].ops.cast(x, 'float32')
+        return np.asarray(x.numpy(), dtype = dtype)
     else:
-        array = np.asarray(x, dtype = dtype)
-    if copy and x is array: array = array.copy()
-    return array
+        return np.asarray(x, dtype = dtype)
 
 @timer(debug = True)
 def convert_to_tensor(x, dtype = None):
@@ -121,39 +140,85 @@ def convert_to_tensor(x, dtype = None):
         This function uses the `tf.cast` with the inferred output type
         The other benefit is the standardization between types (e.g., floating --> tf.float32)
     """
-    if not is_tensor(x):
-        return array(x, dtype_to_str(dtype) if dtype else get_convertion_dtype(x))
-    elif dtype is None or (dtype == 'float' and is_float(x)) or (dtype == 'int' and is_int(x)):
-        return x
+    if dtype is not None:
+        dtype = _get_cast_dtype(x, dtype)
+    elif not hasattr(x, 'dtype'):
+        dtype = get_convertion_dtype(x)
+
+    if isinstance(x, np.ndarray) or not hasattr(x, 'shape'):
+        return array(x, dtype)
+    elif is_tensor(x):
+        return x if dtype is None else cast_ops(x, dtype)
+    elif is_tensorflow_backend() and is_torch_tensor(x):
+        return convert_torch_to_tf(x, dtype)
+    elif is_torch_backend() and is_tf_tensor(x):
+        return convert_tf_to_torch(x, dtype)
     else:
-        return cast(x, dtype)
+        return array(convert_to_numpy(x), dtype)
 
 @timer(debug = True)
 def convert_to_tf_tensor(x, dtype = None):
-    if is_tensorflow_backend(): return convert_to_tensor(x, dtype)
+    import tensorflow as tf
     
-    try:
-        import tensorflow as tf
-    except ImportError:
-        raise TensorflowNotAvailable()
-    
-    if not tf.is_tensor(x):
-        return tf.convert_to_tensor(convert_to_numpy(x, dtype))
-    elif dtype is None or (dtype == 'float' and is_float(x)) or (dtype == 'int' and is_int(x)):
-        return x
+    if dtype is not None: dtype = _get_cast_dtype(x, dtype)
+
+    if isinstance(x, np.ndarray) or not hasattr(x, 'shape'):
+        return tf.convert_to_tensor(x, dtype)
+    elif tf.is_tensor(x):
+        return x if dtype is None else tf.cast(x, dtype)
+    elif is_torch_tensor(x):
+        return convert_torch_to_tf(x, dtype)
     else:
-        return tf.cast(x, dtype)
+        return tf.convert_to_tensor(convert_to_numpy(x), dtype)
 
 @timer(debug = True)
-def convert_to_torch_tensor(x, dtype = None, device = 'cuda'):
+def convert_to_torch_tensor(x, dtype = None, device = None):
     import torch
     
-    if not torch.is_tensor(x):
-        return torch.from_numpy(convert_to_numpy(x, dtype)).to(device = torch.device(device))
-    else:
+    if dtype is not None and not isinstance(dtype, torch.dtype):
+        dtype = _get_cast_dtype(x, dtype)
         if isinstance(dtype, str): dtype = getattr(torch, dtype)
-        return x.to(dtype = dtype, device = torch.device(device))
+    
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    elif isinstance(device, str):
+        device = torch.device(device)
+    
+    if not hasattr(x, 'shape'):
+        return torch.from_numpy(convert_to_numpy(x)).to(device = device, dtype = dtype)
+    elif isinstance(x, np.ndarray):
+        return torch.from_numpy(x).to(device = device, dtype = dtype)
+    elif torch.is_tensor(x):
+        return x.to(dtype = dtype, device = device)
+    elif is_tf_tensor(x):
+        return convert_tf_to_torch(x).to(dtype = dtype, device = device)
+    else:
+        return torch.from_numpy(convert_to_numpy(x)).to(device = device, dtype = dtype)
 
+def convert_torch_to_tf(x, dtype = None):
+    import torch
+    import tensorflow as tf
+
+    x = tf.experimental.dlpack.from_dlpack(torch.utils.dlpack.to_dlpack(x))
+    return x if dtype is None else tf.cast(x, dtype)
+
+def convert_tf_to_torch(x, dtype = None):
+    import torch
+    import tensorflow as tf
+    
+    x = torch.utils.dlpack.from_dlpack(tf.experimental.dlpack.to_dlpack(x))
+    return x if dtype is None else x.to(dtype = getattr(torch, dtype))
+
+def _get_cast_dtype(x, dtype):
+    if not isinstance(dtype, str):
+        dtype = dtype_to_str(dtype)
+    
+    if hasattr(x, 'dtype') and dtype in dtype_to_str(x.dtype):
+        return None
+    elif dtype != 'float':
+        return dtype
+    else:
+        return dtype_to_str(dtype)
 
 """ `dtype` functions """
 
@@ -180,10 +245,19 @@ def dtype_to_str(dtype):
         else:   return sys.modules['keras'].backend.floatx()
     elif hasattr(dtype, 'name'):
         return dtype.name
+    elif isinstance(dtype, type) and issubclass(dtype, np.generic):
+        # numpy scalar *type* classes (e.g. `np.int32`, `np.float32`) have no `.name`
+        # attribute, unlike `np.dtype` instances -- normalize them through `np.dtype`
+        return np.dtype(dtype).name
+    elif 'torch' in sys.modules and isinstance(dtype, sys.modules['torch'].dtype):
+        return str(dtype)[6:]
     elif 'keras' in sys.modules:
         return sys.modules['keras'].backend.standardize_dtype(dtype)
     else:
-        raise ValueError('Unknown dtype : {}'.format(dtype))
+        try:
+            return np.dtype(dtype).name
+        except TypeError:
+            raise ValueError('Unknown dtype : {}'.format(dtype))
 
 
 def is_int(x):  return isinstance(x, int) or 'int' in dtype_to_str(getattr(x, 'dtype', ''))
@@ -199,10 +273,7 @@ def cast(x, dtype):
     elif dtype == dtype_to_str(x.dtype):    return x
     else:                                   return cast_ops(x, dtype)
 
-def _np_cast(x, dtype):
-    return x.astype(dtype) if isinstance(x, np.ndarray) else np.array(x, dtype = dtype)
-
-cast_ops = Ops('cast', numpy_fn = _np_cast)
+cast_ops = Ops('cast', numpy_fn = lambda x, dtype: x.astype(dtype))
 
 @timer(debug = True)
 def convert_data_dtype(x, dtype, source_dtype = None):
@@ -233,10 +304,16 @@ def _np_slice(x, start_indices, lengths):
     return x[slices]
 
 def _np_scatter(indices, values, shape):
-    return _np_scatter_update(np.zeros(shape, dtype = values.dtype), indices, values)
+    indices, values = np.asarray(indices), np.asarray(values)
+    out = np.zeros(shape, dtype = values.dtype)
+    # keras convention : `indices` = (N, rank) -> tuple of per-axis arrays for advanced
+    # indexing ; accumulate colliding indices like `keras.ops.scatter`.
+    np.add.at(out, tuple(np.transpose(indices)), values)
+    return out
 
 def _np_scatter_update(x, indices, updates):
-    x[indices] = updates
+    # keras convention : `indices` = (N, rank) (see `_np_scatter`) -> set in place.
+    x[tuple(np.transpose(np.asarray(indices)))] = updates
     return x
 
 def _np_slice_update(array, start_indices, updates):
@@ -259,7 +336,9 @@ scatter_update  = scatter_nd_update = Ops('scatter_update', numpy_fn = _np_scatt
 """ Other `core` functions """
 
 def _np_cond(c, t, f):
-    return t if c else f
+    # `t` / `f` are the branch *callables* (same signature as `keras.ops.cond`) :
+    # only the selected one is evaluated, mirroring the lazy branch semantics.
+    return t() if c else f()
 
 def _np_stack(x, axis = None):
     return np.array(x) if axis in (0, None) else np.stack(x, axis = axis)
@@ -278,8 +357,12 @@ def _np_unstack(x, axis = None, ** _):
 
 def _np_while(cond, body, loop_vars, maximum_iterations = None):
     """
-        This function comes from the official keras repo :
+        Adapted from the official keras numpy backend :
         https://github.com/keras-team/keras/blob/master/keras/src/backend/numpy/core.py
+
+        Kept **keras-free** : the original uses `keras.tree.map_structure(convert_to_tensor, ...)`,
+        but this numpy path must not pull keras, so we map `convert_to_numpy` over the
+        already-flattened `loop_vars` tuple instead.
     """
     current_iter = 0
     iteration_check = (
@@ -287,7 +370,7 @@ def _np_while(cond, body, loop_vars, maximum_iterations = None):
     )
     is_tuple = isinstance(loop_vars, (tuple, list))
     loop_vars = tuple(loop_vars) if is_tuple else (loop_vars, )
-    loop_vars = tree.map_structure(convert_to_tensor, loop_vars)
+    loop_vars = tuple(convert_to_numpy(v) for v in loop_vars)
     while cond(* loop_vars) and iteration_check(current_iter):
         loop_vars = body(*loop_vars)
         if not isinstance(loop_vars, (list, tuple)):

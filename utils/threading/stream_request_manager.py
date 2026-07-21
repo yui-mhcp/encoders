@@ -10,8 +10,9 @@
 # limitations under the License.
 
 import queue
-import logging
+import asyncio
 import inspect
+import logging
 
 from threading import Lock, Event
 from multiprocessing import Pipe
@@ -68,46 +69,149 @@ class ParentRequestManager(RequestManager):
     """
     def __init__(self, pipe):
         super().__init__(pipe)
-        
+
         self._stopped   = False
+        self._aborted   = set()
         self._requests  = {}
         self._request_idx   = 0
-        
+
         self.build()
-        self.handle_message()
+        self.start_messages_handler()
 
     def stop(self):
         self._stopped = True
-    
-    def init_request(self, request_id = None):
-        with self.mutex:
-            idx = self._request_idx
-            self._request_idx += 1
-        
-            if request_id is None: request_id = idx
 
-            self._requests[request_id] = buffer = queue.Queue()
-        
-        self.send_action(request_id, 'init')
-
-        return request_id, buffer
-    
     def abort_request(self, request_id):
+        # the entry is dropped right away : the consumer stops reading after an abort, so the
+        # end-of-request messages would never be consumed (late items are skipped in `put`)
+        self._aborted.add(request_id)
+        self._requests.pop(request_id, None)
         self.send_action(request_id, 'stop')
     
     def finalize_request(self, request_id):
         self.send_action(request_id, 'finalize')
 
-    @run_in_thread(daemon = True)
-    def handle_message(self):
-        while not self._stopped:
-            msg = self.pipe.recv()
-            if msg['id'] in self._requests:
-                self._requests[msg['id']].put(msg)
-                if msg['type'] == 'status' and msg['content'] == 'finished':
-                    self._requests.pop(msg['id'])
+    def is_active(self, request_id):
+        return request_id in self._requests
+    
+    def put(self, request_id, item):
+        """ Put `item` to the buffer of request `request_id` """
+        request = self._requests.get(request_id, None)
+        if request is None:
+            if request_id in self._aborted:
+                # late items from the child (already in the pipe when the abort was sent)
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug('Skip late message for aborted request {}'.format(request_id))
             else:
-                logger.error('The request id {} is not active, and should therefore not receive any message, but got {}.'.format(msg['id'], msg))
+                logger.error('Request {} is not running, but got message {}.'.format(
+                    request_id, item
+                ))
+            return
+        elif logger.isEnabledFor(logging.DEBUG):
+            logger.debug('Put item to buffer {}'.format(request_id))
+        
+        if 'loop' in request:
+            asyncio.run_coroutine_threadsafe(request['buffer'].put(item), request['loop'])
+        else:
+            request['buffer'].put(item)
+
+    def init_request(self, request_id = None, *, loop = None):
+        """
+            Init a new streaming buffer with the given id
+            If `loop` is provided, it will use `asyncio`.
+            
+            Example:
+            - Example without `asyncio`:
+            ```python
+            request_id = stream_manager.init_request()
+            item = stream_manager.get(request_id) # block current thread until an item is available
+            while stream_manager.is_active(request_id):
+                # do some computation on each item
+                item = stream_manager.get(request_id) # block current thread until an item is available
+            ```
+            
+            - Example with `asncio`:
+            ```python
+            request_id = stream_manager.init_request(loop = asyncio.get_event_loop())
+            item = await stream_manager.aget(request_id) # wait until an item is available
+            while stream_manager.is_active(request_id):
+                # do some computation on each item
+                item = await stream_manager.aget(request_id) # wait until an item is available
+            ```
+            
+            Note: the `is_running` returns `False` only after consuming the final item.
+            Another way to check the end of stream is to check :
+                `if item['status'] == 'status' and item['content'] == 'finished': break`
+
+        """
+        if request_id is None:
+            with self.mutex:
+                request_id = self._request_idx
+                self._request_idx += 1
+        
+        if request_id in self._requests:
+            raise RuntimeError('Request {} is already running'.format(request_id))
+
+        self._aborted.discard(request_id)
+        if loop is None:
+            self._requests[request_id] = {'buffer' : queue.Queue()}
+        else:
+            self._requests[request_id] = {'buffer' : asyncio.Queue(), 'loop' : loop}
+        
+        self.send_action(request_id, 'init')
+
+        return request_id
+    
+    def handle_item(self, request_id, item):
+        # `END_OF_REQUEST` (`inspect._empty`) and the 'finished' status both mark the end of
+        # the request : consumers may stop reading at either one, so the entry is dropped on
+        # the first of the two that gets consumed
+        if (item['type'] == 'status' and item['content'] == 'finished') or (
+            item['type'] == 'output' and item['content'] is inspect._empty):
+            self._requests.pop(request_id, None)
+
+        return item
+
+    def get(self, request_id, ** kwargs):
+        request = self._requests[request_id]
+        
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug('Start waiting on buffer {}'.format(request_id))
+
+        if 'loop' in request:
+            item = asyncio.run_coroutine_threadsafe(
+                request['buffer'].get(), request['loop']
+            ).result(** kwargs)
+        else:
+            item = request['buffer'].get(** kwargs)
+
+        return self.handle_item(request_id, item)
+    
+    def get_nowait(self, request_id):
+        try:
+            return self.handle_item(request_id, self._requests[request_id]['buffer'].get_nowait())
+        except (queue.Empty, asyncio.QueueEmpty):
+            raise queue.Empty
+    
+    async def aget(self, request_id):
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug('Start waiting from buffer {}'.format(request_id))
+
+        item = await self._requests[request_id]['buffer'].get()
+        
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug('Get item from buffer {}'.format(request_id))
+
+        return self.handle_item(request_id, item)
+    
+    @run_in_thread(daemon = True)
+    def start_messages_handler(self):
+        try:
+            while not self._stopped:
+                msg = self.pipe.recv()
+                self.put(msg['id'], msg)
+        except EOFError:
+            pass
     
 class ChildRequestManager(RequestManager):
     def __init__(self, pipe):
@@ -129,24 +233,39 @@ class ChildRequestManager(RequestManager):
             item = {'id' : item[0], 'type' : 'output', 'content' : item[1]}
         elif not isinstance(item, dict) or request_id is not None:
             item = {'id' : request_id, 'type' : 'output', 'content' : item}
-        
-        if item['id'] not in self._requests:
+
+        if self.is_stopped(item['id']):
+            # aborted request : the parent dropped its buffer, so late items (e.g., the
+            # trailing `END_OF_STREAM`) are not forwarded
+            return False
+        elif item['id'] not in self._requests:
             logger.error('The request {} seems to not have been initialized ! Make sure to send a status "init" message (in the parent process) before starting it.'.format(item['id']))
-        
+
         self.send(item)
-        
+
         return self.is_active(item['id'])
-    
+
     def is_active(self, request_id):
         return not self.is_stopped(request_id)
-    
+
     def is_stopped(self, request_id):
         with self.mutex:
             return request_id in self._stopped
+
+    # `RequestController` (models.nlu.streaming) polls `is_aborted` between the pipeline
+    # steps (cf its docstring) : without this alias, a 'stop' action received during a long
+    # pre-generation phase (prompt preparation, image encoding) would only be observed at
+    # the first streaming step
+    is_aborted = is_stopped
     
     def is_finalized(self, request_id):
+        """ Returns whether the 'finalize' action has been received for this (still active) request """
         with self.mutex:
-            return request_id in self._requests and not self._requests[request_id].is_set()
+            return (
+                request_id in self._requests
+                and self._requests[request_id].is_set()
+                and request_id not in self._stopped
+            )
     
     def finalize(self, request_id):
         self(inspect._empty, request_id = request_id)
@@ -181,4 +300,3 @@ class ChildRequestManager(RequestManager):
                     elif msg['content'] == 'finalize':
                         self._requests[msg['id']].set()
                         logger.info('Request {} is finalized'.format(msg['id']))
-

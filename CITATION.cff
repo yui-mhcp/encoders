@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this project in your work, please cite it as below."
+title: "encoders: audio & text embedding models (GE2E speaker encoder + bge-m3 text encoder / RAG)"
+abstract: >-
+  Embedding-models project built on the `BaseModel` interface : a GE2E-trained audio
+  encoder for speaker verification and a bge-m3 text encoder with a RAG layer
+  (vector database + semantic search) — part of the yui-mhcp projects.
+authors:
+  - name: "yui"
+    email: "yui-mhcp@tutanota.com"
+type: software
+version: 1.0.0
+date-released: 2026-07-21
+license: AGPL-3.0-or-later
+url: "https://github.com/yui-mhcp"
+repository-code: "https://github.com/yui-mhcp/encoders"
+keywords:
+  - deep-learning
+  - keras
+  - embeddings
+  - speaker-verification
+  - information-retrieval
+  - rag
+  - tensorrt
