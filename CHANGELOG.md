@@ -2,6 +2,25 @@
 
 This file tracks the major updates of the [encoders](https://github.com/yui-mhcp/encoders) project. For the global, cross-project overview of all the `yui-mhcp` repositories, see the [central CHANGELOG](https://github.com/yui-mhcp/yui-mhcp/blob/main/CHANGELOG.md) :smile:
 
+## [v1.1.0] - 01/11/2026 - November update ! :yum:
+
+Minor release, mainly synced with the shared foundation, with an experimental TensorRT-LLM support for text encoders !
+
+### Major updates
+
+- The shared `utils` / `loggers` / `models/core` foundation has been synced (see the [data_processing CHANGELOG](https://github.com/yui-mhcp/data_processing/blob/main/CHANGELOG.md) and the [base_dl_project CHANGELOG](https://github.com/yui-mhcp/base_dl_project/blob/main/CHANGELOG.md)) : new `image_augmentation` module, `Tokenizer` support of `transformers 5`, new `TensorRTLLMAPIRuntime` (TensorRT-LLM `LLM API`), new append-only `JSONLDatabase`, `keras 3.16` compatibility and an extended test suite
+
+### Minor updates
+
+- **[EXPERIMENTAL]** The `TextEncoder` supports the TensorRT-LLM `LLM API` (`runtime = 'trt_llm_api'`, `encode_only` mode) : variable-length batches are packed without padding (×1.75–2.9 faster than `transformers` on mixed-length batches, `float16`, RTX 5090). **Known limitation** : `bge-m3` (`XLMRobertaModel`) is not yet supported by the upstream TensorRT-LLM library (tested with `1.3.0rc29`), so it currently requires a TensorRT-LLM build with `XLMRoberta` support
+- The `information_retrieval` notebook has been updated
+- `VectorDatabase` / `VectorIndex` (from the socle) : column-based filtering and faster search
+- `keras 3.16` compatibility of the shared `architectures` : the RNN masking is explicitly re-enabled (`enable_rnn_masking`), `backend_rnn` resolves the moved `keras.src.backend.rnn` module, and the masks are handled through `get_keras_mask` / `set_keras_mask` instead of the private `_keras_mask` attribute
+
+### Bugs fixed
+
+- `pip install -e .` works again with the recent `setuptools` versions : the `License ::` classifier, superseded by the PEP 639 `license` expression (`AGPL-3.0-or-later`), has been removed from the `pyproject.toml`
+
 ## [v1.0.0] - 21/07/2026 - Major refactoring release ! :yum:
 
 First tagged release (`v1.0.0`) following a large refactoring of the embedding models, built on top of the `BaseModel` foundation (see the [base_dl_project CHANGELOG](https://github.com/yui-mhcp/base_dl_project/blob/main/CHANGELOG.md)) and the shared `utils` / `loggers` socle (see the [data_processing CHANGELOG](https://github.com/yui-mhcp/data_processing/blob/main/CHANGELOG.md)) !

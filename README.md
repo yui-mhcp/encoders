@@ -2,11 +2,11 @@
 
 ![Python](https://img.shields.io/badge/python-3.12-blue.svg)
 ![License](https://img.shields.io/badge/licence-AGPL--3.0-green.svg)
-![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)
+![Version](https://img.shields.io/badge/version-1.1.0-orange.svg)
 
 This repository implements **encoder models**, i.e. models that map their inputs (audio, text, ...) to a fixed-size vector space (the *embedding* space) in which similar inputs are close to each other. It powers two main use-cases : **speaker verification** (audio) and **information retrieval / RAG** (text).
 
-Check the [CHANGELOG](https://github.com/yui-mhcp/yui-mhcp/blob/main/CHANGELOG.md) file to have a global overview of the latest modifications ! :yum:
+Check the [CHANGELOG](CHANGELOG.md) file for the latest updates of this project, and the [global CHANGELOG](https://github.com/yui-mhcp/yui-mhcp/blob/main/CHANGELOG.md) for a cross-project overview ! :yum:
 
 ## Project structure
 
@@ -50,11 +50,13 @@ Check the [CHANGELOG](https://github.com/yui-mhcp/yui-mhcp/blob/main/CHANGELOG.m
 ├── information_retrieval.ipynb : notebook illustrating information retrieval / RAG with `TextEncoder`
 ├── speaker_verification.ipynb  : notebook illustrating speaker verification with `AudioEncoder` (WIP)
 ├── CHANGELOG.md                : project-specific changelog
+├── CITATION.cff                : citation metadata
 ├── CONTRIBUTING.md             : contribution guidelines
 ├── INSTALLATION.md             : shared GPU environment installation guide
 ├── LICENCE                     : project license file
 ├── pyproject.toml              : project metadata, dependencies and tooling config
-└── README.md                   : this file
+├── README.md                   : this file
+└── __version__.py              : single-source project version
 ```
 
 \* The `loggers`, `utils`, `models/core` and most of the `tests` tree are the shared foundation maintained in the [data_processing](https://github.com/yui-mhcp/data_processing) and [base_dl_project](https://github.com/yui-mhcp/base_dl_project) repositories — check them for more information on these modules and the `BaseModel` interface.
@@ -105,7 +107,7 @@ The backend is selected at runtime through the `KERAS_BACKEND` environment varia
 import os
 os.environ['KERAS_BACKEND'] = 'tensorflow'
 
-from models import get_pretrained
+from models.encoder import TextEncoder
 
 # 1. Load a pretrained text encoder (multilingual bge-m3) ...
 model = TextEncoder(pretrained = 'BAAI/bge-m3', name = 'bge-m3')
@@ -123,6 +125,8 @@ query = 'What is an embedding ?'
 
 res = search(model, database, query, k = 3)
 ```
+
+**[EXPERIMENTAL] Accelerated inference** : the `TextEncoder` can also run on the [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) `LLM API` (`runtime = 'trt_llm_api'`, `encode_only` mode), which packs variable-length batches without padding (×1.75–2.9 faster than `transformers` on mixed-length batches, measured in `float16` on an RTX 5090). **Known limitation** : `bge-m3` (`XLMRobertaModel`) is not yet supported by the upstream TensorRT-LLM library (tested with `1.3.0rc29`), so this runtime currently requires a TensorRT-LLM build with `XLMRoberta` support for the pytorch backend.
 
 See the `information_retrieval.ipynb` notebook for the full walkthrough (document ingestion, vector database, semantic search). The `speaker_verification.ipynb` notebook illustrates the `AudioEncoder` flow (still being finalized). :smile:
 
@@ -151,6 +155,7 @@ Tests are annotated with markers (declared in `pyproject.toml`) so the suite ada
 - [x] Implement a `VectorDatabase` for information retrieval
 - [x] Implement a `VectorIndex` for information retrieval
 - [x] Implement the RAG layer (`models/encoder/rag.py`) on top of `TextEncoder`
+- [x] Support the `TensorRT-LLM` `LLM API` for text encoders (experimental)
 - [ ] Convert the `siamese_networks` project :
     - [x] Implement the `BaseEncoder` class
     - [ ] Implement the `BaseSiamese` class

@@ -183,7 +183,7 @@ class BaseEncoder(BaseModel):
             embeddings = np.concatenate(embeddings, axis = 0)
         elif self.runtime == 'keras':
             embeddings = ops.concatenate(embeddings, axis = 0)
-        elif self.runtime in ('hf', 'trt', 'trt_llm'):
+        elif self.runtime in ('hf', 'trt', 'trt_llm', 'trt_llm_api'):
             import torch
             embeddings = torch.concat(embeddings, dim = 0)
         else:
